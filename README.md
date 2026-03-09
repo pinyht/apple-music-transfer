@@ -2,6 +2,10 @@
 
 Apple Music Transfer 是一个用于 Apple Music 数据备份与迁移的 Tampermonkey 用户脚本。
 
+项目地址：
+
+- GitHub: https://github.com/pinyht/apple-music-transfer
+
 它主要用于：
 
 - 备份 Apple Music 资料库中的专辑、歌曲、播放列表

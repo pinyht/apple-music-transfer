@@ -4,6 +4,8 @@
 // @description  备份、导出与导入 Apple Music 资料库中的专辑、歌曲和播放列表，适用于跨账号、跨区服迁移及订阅中断后的资料库恢复。
 // @author       pinyht
 // @license      MIT
+// @homepageURL  https://github.com/pinyht/apple-music-transfer
+// @supportURL   https://github.com/pinyht/apple-music-transfer
 // @version      1.0
 // @match        https://music.apple.com/*
 // @grant        none
