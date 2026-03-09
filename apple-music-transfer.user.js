@@ -6,7 +6,7 @@
 // @license      MIT
 // @homepageURL  https://github.com/pinyht/apple-music-transfer
 // @supportURL   https://github.com/pinyht/apple-music-transfer
-// @version      1.0.2
+// @version      1.0.3
 // @match        https://music.apple.com/*
 // @grant        none
 // @run-at       document-start
@@ -34,7 +34,10 @@
   const PANEL_EXPANDED_WIDTH = 420;
   const PANEL_HIDDEN_WIDTH = 236;
   const EXPORT_RELOAD_MAX_ATTEMPTS = 2;
-  const PLAYLIST_CREATION_SETTLE_MS = 3000;
+  const PLAYLIST_CREATION_SETTLE_MS = 5000;
+  const PLAYLIST_ADD_SETTLE_MS = 2500;
+  const PLAYLIST_LOOKUP_RETRY_TIMEOUT_MS = 25000;
+  const PLAYLIST_LOOKUP_RETRY_INTERVAL_MS = 1500;
   const TOOL_PANEL_Z_INDEX = 2147483000;
   const TOOL_OVERLAY_Z_INDEX = 2147483500;
   const TOOL_RESULT_Z_INDEX = 2147483501;
@@ -4679,6 +4682,23 @@ ${result.mediaType === "playlists" ? `播放列表名：${result.playlistName ||
     return nested;
   }
 
+  async function refreshAddToPlaylistSubmenu(token = null) {
+    const moreButton = findMoreButton(document);
+    if (moreButton && isVisibleNode(moreButton)) {
+      moreButton.click();
+      await sleep(350);
+    } else {
+      document.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true
+      }));
+      await sleep(350);
+    }
+
+    return ensureAddToPlaylistSubmenuOpen(token);
+  }
+
   function findPlaylistOptionButtonInSubmenu(submenu, playlistName) {
     const normalizedName = cleanText(playlistName);
     if (!submenu || !normalizedName) return null;
@@ -4697,6 +4717,29 @@ ${result.mediaType === "playlists" ? `播放列表名：${result.playlistName ||
     if (!submenu) return null;
     return Array.from(submenu.querySelectorAll(".contextual-menu-item button"))
       .find(button => nodeMatchesKeywords(button, NEW_PLAYLIST_KEYWORDS, "exact")) || null;
+  }
+
+  async function waitForPlaylistOptionButton(playlistName, timeout = PLAYLIST_LOOKUP_RETRY_TIMEOUT_MS, token = null) {
+    const startedAt = Date.now();
+    let firstAttempt = true;
+
+    while (Date.now() - startedAt < timeout) {
+      if (token && !isRunValid(token)) return null;
+
+      const submenu = firstAttempt
+        ? await ensureAddToPlaylistSubmenuOpen(token)
+        : await refreshAddToPlaylistSubmenu(token);
+      firstAttempt = false;
+
+      const button = findPlaylistOptionButtonInSubmenu(submenu, playlistName);
+      if (button) {
+        return button;
+      }
+
+      await sleep(PLAYLIST_LOOKUP_RETRY_INTERVAL_MS);
+    }
+
+    return null;
   }
 
   async function createPlaylistFromDialog(playlistName, playlistDescription, token = null) {
@@ -4756,12 +4799,19 @@ ${result.mediaType === "playlists" ? `播放列表名：${result.playlistName ||
     if (existingPlaylistButton) {
       state.playlistCreated = true;
       existingPlaylistButton.click();
-      await sleep(1200);
+      await sleep(PLAYLIST_ADD_SETTLE_MS);
       return { ok: true, mode: "added-to-existing-playlist" };
     }
 
     if (state?.playlistCreated) {
-      return { ok: false, reason: "playlist-not-found-after-create" };
+      const delayedPlaylistButton = await waitForPlaylistOptionButton(playlistName, PLAYLIST_LOOKUP_RETRY_TIMEOUT_MS, token);
+      if (!delayedPlaylistButton) {
+        return { ok: false, reason: "playlist-not-found-after-create" };
+      }
+
+      delayedPlaylistButton.click();
+      await sleep(PLAYLIST_ADD_SETTLE_MS);
+      return { ok: true, mode: "added-to-existing-playlist-after-retry" };
     }
 
     const newPlaylistButton = findNewPlaylistButtonInSubmenu(submenu);
