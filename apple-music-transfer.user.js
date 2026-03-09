@@ -6,7 +6,7 @@
 // @license      MIT
 // @homepageURL  https://github.com/pinyht/apple-music-transfer
 // @supportURL   https://github.com/pinyht/apple-music-transfer
-// @version      1.0.1
+// @version      1.0.2
 // @match        https://music.apple.com/*
 // @grant        none
 // @run-at       document-start
@@ -1113,6 +1113,28 @@
     return rows.map(row => row.map(csvCell).join(",")).join("\n");
   }
 
+  function hasAlbumExportContent(item) {
+    return !!(
+      cleanText(item?.id) ||
+      cleanText(item?.name) ||
+      cleanText(item?.artistName)
+    );
+  }
+
+  function getAlbumExportItemKey(item) {
+    const id = cleanText(item?.id);
+    if (id) return `id:${id}`;
+
+    const parts = [
+      cleanText(item?.name),
+      cleanText(item?.artistName)
+    ]
+      .map(normalize)
+      .filter(Boolean);
+
+    return parts.length ? `meta:${parts.join("|||")}` : "";
+  }
+
   function getAlbumCatalogId(libraryResource) {
     const relationshipCatalogId = cleanText(
       libraryResource?.relationships?.catalog?.data?.[0]?.id || ""
@@ -1129,12 +1151,15 @@
     const catalogResource = catalogId ? catalogAlbums[catalogId] : null;
     const id = cleanText(catalogResource?.id || catalogId || libraryResource?.id);
     const attributes = catalogResource?.attributes || libraryResource?.attributes || {};
-    if (!id) return null;
+    const name = cleanText(attributes.name);
+    const artistName = cleanText(attributes.artistName);
+
+    if (!(id || name || artistName)) return null;
 
     return {
       id,
-      name: cleanText(attributes.name),
-      artistName: cleanText(attributes.artistName),
+      name,
+      artistName,
       displayLanguage: getLanguage()
     };
   }
@@ -1163,9 +1188,10 @@
     for (const dataItem of payload?.data || []) {
       const id = cleanText(dataItem?.id);
       const item = extractAlbumExportItem(resources[id] || dataItem, catalogAlbums);
-      if (!item || !item.id || !item.name) continue;
-      if (!tracker.itemsById.has(item.id)) {
-        tracker.itemsById.set(item.id, item);
+      const itemKey = getAlbumExportItemKey(item);
+      if (!item || !hasAlbumExportContent(item) || !itemKey) continue;
+      if (!tracker.itemsById.has(itemKey)) {
+        tracker.itemsById.set(itemKey, item);
         added += 1;
       }
     }
@@ -1173,9 +1199,10 @@
     if (!payload?.data?.length) {
       for (const resource of Object.values(resources)) {
         const item = extractAlbumExportItem(resource, catalogAlbums);
-        if (!item || !item.id || !item.name) continue;
-        if (!tracker.itemsById.has(item.id)) {
-          tracker.itemsById.set(item.id, item);
+        const itemKey = getAlbumExportItemKey(item);
+        if (!item || !hasAlbumExportContent(item) || !itemKey) continue;
+        if (!tracker.itemsById.has(itemKey)) {
+          tracker.itemsById.set(itemKey, item);
           added += 1;
         }
       }
@@ -1529,18 +1556,46 @@
     return cleanText(libraryResource?.attributes?.playParams?.catalogId || "");
   }
 
+  function hasSongExportContent(item) {
+    return !!(
+      cleanText(item?.id) ||
+      cleanText(item?.name) ||
+      cleanText(item?.artistName) ||
+      cleanText(item?.albumName)
+    );
+  }
+
+  function getSongExportItemKey(item) {
+    const id = cleanText(item?.id);
+    if (id) return `id:${id}`;
+
+    const parts = [
+      cleanText(item?.name),
+      cleanText(item?.artistName),
+      cleanText(item?.albumName)
+    ]
+      .map(normalize)
+      .filter(Boolean);
+
+    return parts.length ? `meta:${parts.join("|||")}` : "";
+  }
+
   function extractSongExportItem(libraryResource, catalogSongs = {}) {
     const catalogId = getSongCatalogId(libraryResource);
     const catalogResource = catalogId ? catalogSongs[catalogId] : null;
     const id = cleanText(catalogResource?.id || catalogId || libraryResource?.id);
     const attributes = catalogResource?.attributes || libraryResource?.attributes || {};
-    if (!id) return null;
+    const name = cleanText(attributes.name);
+    const artistName = cleanText(attributes.artistName);
+    const albumName = cleanText(attributes.albumName);
+
+    if (!(id || name || artistName || albumName)) return null;
 
     return {
       id,
-      name: cleanText(attributes.name),
-      artistName: cleanText(attributes.artistName),
-      albumName: cleanText(attributes.albumName),
+      name,
+      artistName,
+      albumName,
       displayLanguage: getLanguage()
     };
   }
@@ -1569,9 +1624,10 @@
     for (const dataItem of payload?.data || []) {
       const id = cleanText(dataItem?.id);
       const item = extractSongExportItem(resources[id] || dataItem, catalogSongs);
-      if (!item || !item.id || !item.name) continue;
-      if (!tracker.itemsById.has(item.id)) {
-        tracker.itemsById.set(item.id, item);
+      const itemKey = getSongExportItemKey(item);
+      if (!item || !hasSongExportContent(item) || !itemKey) continue;
+      if (!tracker.itemsById.has(itemKey)) {
+        tracker.itemsById.set(itemKey, item);
         added += 1;
       }
     }
@@ -1579,9 +1635,10 @@
     if (!payload?.data?.length) {
       for (const resource of Object.values(resources)) {
         const item = extractSongExportItem(resource, catalogSongs);
-        if (!item || !item.id || !item.name) continue;
-        if (!tracker.itemsById.has(item.id)) {
-          tracker.itemsById.set(item.id, item);
+        const itemKey = getSongExportItemKey(item);
+        if (!item || !hasSongExportContent(item) || !itemKey) continue;
+        if (!tracker.itemsById.has(itemKey)) {
+          tracker.itemsById.set(itemKey, item);
           added += 1;
         }
       }
@@ -3035,13 +3092,31 @@
 
     const hasAlbumNameField = items.some(item => cleanText(item?.albumName));
     const hasAlbumField = items.some(item => cleanText(item?.album));
-    const hasSongLikeId = items.every(item => cleanText(item?.id));
 
-    if (hasSongLikeId && hasAlbumNameField && !hasAlbumField) {
+    if (hasAlbumNameField && !hasAlbumField) {
       return "songs";
     }
 
     return "albums";
+  }
+
+  function hasImportItemContent(item, mediaType) {
+    if (!item || typeof item !== "object") return false;
+
+    if (mediaType === "songs" || mediaType === "playlists") {
+      return !!(
+        cleanText(item?.id) ||
+        cleanText(item?.name || item?.song || item?.title) ||
+        cleanText(item?.artistName || item?.artist) ||
+        cleanText(item?.albumName || item?.album)
+      );
+    }
+
+    return !!(
+      cleanText(item?.id) ||
+      cleanText(item?.album || item?.name || item?.title) ||
+      cleanText(item?.artistName || item?.artist)
+    );
   }
 
   function validateImportPayloadForMediaType(payload, mediaType) {
@@ -3065,11 +3140,11 @@
         };
       }
 
-      const invalidItem = list.find(item => !cleanText(item?.id));
+      const invalidItem = list.find(item => !hasImportItemContent(item, mediaType));
       if (invalidItem) {
         return {
           ok: false,
-          message: "导入播放列表时，tracks 中每一条都必须包含歌曲 id。"
+          message: "导入播放列表时，tracks 中不能存在完全空白的条目。"
         };
       }
 
@@ -3091,11 +3166,11 @@
         };
       }
 
-      const invalidItem = list.find(item => !cleanText(item?.id));
+      const invalidItem = list.find(item => !hasImportItemContent(item, mediaType));
       if (invalidItem) {
         return {
           ok: false,
-          message: "导入歌曲时，items 中每一条都必须包含歌曲 id。"
+          message: "导入歌曲时，items 中不能存在完全空白的条目。"
         };
       }
 
@@ -3124,11 +3199,11 @@
       };
     }
 
-    const invalidAlbum = list.find(item => !(cleanText(item?.id) || cleanText(item?.album || item?.name || item?.title)));
+    const invalidAlbum = list.find(item => !hasImportItemContent(item, mediaType));
     if (invalidAlbum) {
       return {
         ok: false,
-        message: "导入专辑时，每一条至少需要包含专辑 id 或专辑名。"
+        message: "导入专辑时，每一条至少需要包含专辑 id、专辑名或艺人信息中的一种。"
       };
     }
 
@@ -3151,7 +3226,7 @@
             album: cleanText(x.album || x.name || x.title || ""),
             artist: cleanText(x.artist || x.artistName || "")
           })
-      .filter(x => mediaType === "songs" || mediaType === "playlists" ? x.id : (x.id || x.album));
+      .filter(x => hasImportItemContent(x, mediaType));
   }
 
   function getSearchQuery(item) {
@@ -3635,13 +3710,38 @@ ${result.mediaType === "playlists" ? `播放列表名：${result.playlistName ||
   }
 
   function getItemNavigationUrl(state, item) {
-    if (!item) return "";
+    if (!item || !cleanText(item?.id)) return "";
     if (["songs", "playlists"].includes(getImportMediaType(state))) {
       return buildSongUrl(item.id);
     }
-    return cleanText(item?.id)
-      ? buildAlbumUrl(item.id)
-      : makeSearchUrl(item);
+    return buildAlbumUrl(item.id);
+  }
+
+  function markImportItemAsUnavailable(state, item, mediaType, detail = "") {
+    const resolvedMediaType = mediaType || getImportMediaType(state);
+    const isAlbum = resolvedMediaType === "albums";
+    const title = isAlbum
+      ? (item?.name || item?.album || "(无标题)")
+      : (item?.name || "(无标题)");
+    const itemId = cleanText(item?.id) || "(空)";
+    const suffix = detail ? ` ｜ ${detail}` : "";
+
+    if (resolvedMediaType === "playlists") {
+      state.missing.push({ ...item, reason: "song-not-available" });
+      state.index += 1;
+      state.phase = "idle";
+      state.pendingAction = null;
+      persistImportProgress(state, "播放列表导入全部完成");
+      log(`歌曲不存在或当前区服不可用，已跳过：${itemId} ｜ ${title}${suffix}`);
+      return;
+    }
+
+    state.missing.push(item);
+    state.index += 1;
+    state.phase = "idle";
+    state.pendingAction = null;
+    persistImportProgress(state);
+    log(`${isAlbum ? "专辑" : "歌曲"}不存在或当前区服不可用，已跳过：${itemId} ｜ ${title}${suffix}`);
   }
 
   function formatCurrentItem(state, item) {
@@ -5265,6 +5365,11 @@ ${result.mediaType === "playlists" ? `播放列表名：${result.playlistName ||
       return;
     }
 
+    if (!cleanText(item?.id)) {
+      markImportItemAsUnavailable(state, item, mediaType, "ID为空，视为已下架");
+      return;
+    }
+
     if (mediaType === "playlists") {
       render();
 
@@ -5289,12 +5394,7 @@ ${result.mediaType === "playlists" ? `播放列表名：${result.playlistName ||
       if (continuous && token && !isRunValid(token)) return;
 
       if (pageState.status === "missing") {
-        state.missing.push({ ...item, reason: "song-not-available" });
-        state.index += 1;
-        state.phase = "idle";
-        state.pendingAction = null;
-        persistImportProgress(state, "播放列表导入全部完成");
-        log(`歌曲不存在或当前区服不可用，已跳过：${item.id} ｜ ${item.name || "(无标题)"}`);
+        markImportItemAsUnavailable(state, item, mediaType);
         return;
       }
 
@@ -5368,12 +5468,7 @@ ${result.mediaType === "playlists" ? `播放列表名：${result.playlistName ||
       if (continuous && token && !isRunValid(token)) return;
 
       if (pageState.status === "missing") {
-        state.missing.push(item);
-        state.index += 1;
-        state.phase = "idle";
-        state.pendingAction = null;
-        persistImportProgress(state);
-        log(`歌曲不存在或当前区服不可用，已跳过：${item.id} ｜ ${item.name || "(无标题)"}`);
+        markImportItemAsUnavailable(state, item, mediaType);
         return;
       }
 
@@ -5433,128 +5528,58 @@ ${result.mediaType === "playlists" ? `播放列表名：${result.playlistName ||
       return;
     }
 
-    if (cleanText(item?.id)) {
-      render();
-
-      if (!onAlbumPage() || !albumPageMatchesItem(item)) {
-        state.pendingAction = "process-current-item";
-        state.phase = continuous ? "navigating-album-continuous" : "navigating-album-single-step";
-        saveState(state);
-        log(`当前页面不是当前专辑条目的详情页，准备打开：${item.id} ｜ 当前URL ${location.pathname}${location.search}`);
-        location.href = buildAlbumUrl(item.id);
-        return;
-      }
-
-      if (state.pendingAction) {
-        state.pendingAction = null;
-        state.phase = continuous ? "continuous-album-loaded" : "single-step-album-loaded";
-        saveState(state);
-        render();
-        log(`已进入专辑页，开始判断资料库状态：${location.pathname}${location.search}`);
-      }
-
-      const pageState = await resolveAlbumPageState(item, token);
-      if (continuous && token && !isRunValid(token)) return;
-
-      if (pageState.status === "missing") {
-        state.missing.push(item);
-        state.index += 1;
-        state.phase = "idle";
-        state.pendingAction = null;
-        persistImportProgress(state);
-        log(`专辑不存在或当前区服不可用，已跳过：${item.id} ｜ ${item.name || item.album || "(无标题)"}`);
-        return;
-      }
-
-      if (pageState.status === "already-added") {
-        state.skipped.push({ ...item, reason: "already-in-library" });
-        state.index += 1;
-        state.phase = "idle";
-        state.pendingAction = null;
-        persistImportProgress(state);
-        log(`专辑已存在资料库中，已跳过：${item.id} ｜ ${item.name || item.album || "(无标题)"}`);
-        return;
-      }
-
-      if (pageState.status === "addable") {
-        const addResult = await addCurrentAlbumToLibrary(item, token, pageState.button);
-        if (continuous && token && !isRunValid(token)) return;
-
-        if (addResult.ok) {
-          state.done.push(item);
-          state.index += 1;
-          state.phase = "idle";
-          state.pendingAction = null;
-          persistImportProgress(state);
-          log(`专辑添加成功：${item.id} ｜ ${item.name || item.album || "(无标题)"} ｜ ${addResult.mode}`);
-          return;
-        }
-
-        state.failed.push({ ...item, reason: addResult.reason || "album-add-failed" });
-        state.phase = "need-manual-check";
-        state.pendingAction = null;
-        if (continuous) {
-          state.running = false;
-          state.runToken = null;
-          currentRunToken = null;
-        }
-        saveState(state);
-        render();
-        log(`专辑添加失败，已停下：${item.id} ｜ ${item.name || item.album || "(无标题)"} ｜ ${addResult.reason}`);
-        return;
-      }
-
-      if (pageState.status === "stopped") {
-        return;
-      }
-
-      state.failed.push({ ...item, reason: `album-page-${pageState.status || "unknown"}` });
-      state.phase = "need-manual-check";
-      state.pendingAction = null;
-      if (continuous) {
-        state.running = false;
-        state.runToken = null;
-        currentRunToken = null;
-      }
-      saveState(state);
-      render();
-      log(`专辑页状态无法识别，已停下：${item.id} ｜ ${item.name || item.album || "(无标题)"} ｜ ${pageState.status}`);
-      return;
-    }
-
     render();
 
-    if (!onSearchPage() || !searchPageMatchesItem(item)) {
+    if (!onAlbumPage() || !albumPageMatchesItem(item)) {
       state.pendingAction = "process-current-item";
-      state.phase = continuous ? "navigating-search-continuous" : "navigating-search-single-step";
+      state.phase = continuous ? "navigating-album-continuous" : "navigating-album-single-step";
       saveState(state);
-      log(`当前页面不是当前条目的搜索页，准备打开搜索：${item.artist} - ${item.album} ｜ 当前URL ${location.pathname}${location.search} ｜ 当前term ${getCurrentSearchTerm() || "(空)"}`);
-      location.href = makeSearchUrl(item);
+      log(`当前页面不是当前专辑条目的详情页，准备打开：${item.id} ｜ 当前URL ${location.pathname}${location.search}`);
+      location.href = buildAlbumUrl(item.id);
       return;
     }
 
     if (state.pendingAction) {
       state.pendingAction = null;
-      state.phase = continuous ? "continuous-search-loaded" : "single-step-search-loaded";
+      state.phase = continuous ? "continuous-album-loaded" : "single-step-album-loaded";
       saveState(state);
       render();
-      log(`已进入搜索页，开始识别候选：${location.pathname}${location.search}`);
+      log(`已进入专辑页，开始判断资料库状态：${location.pathname}${location.search}`);
     }
 
-    const result = await pickAndAddFromSearch(item, token);
+    const pageState = await resolveAlbumPageState(item, token);
     if (continuous && token && !isRunValid(token)) return;
 
-    if (result.ok) {
-      state.done.push(item);
+    if (pageState.status === "missing") {
+      markImportItemAsUnavailable(state, item, mediaType);
+      return;
+    }
+
+    if (pageState.status === "already-added") {
+      state.skipped.push({ ...item, reason: "already-in-library" });
       state.index += 1;
       state.phase = "idle";
       state.pendingAction = null;
       persistImportProgress(state);
-      log(`成功：${item.artist} - ${item.album}`);
+      log(`专辑已存在资料库中，已跳过：${item.id} ｜ ${item.name || item.album || "(无标题)"}`);
       return;
     }
 
-    if (result.reason === "manual-cancel") {
+    if (pageState.status === "addable") {
+      const addResult = await addCurrentAlbumToLibrary(item, token, pageState.button);
+      if (continuous && token && !isRunValid(token)) return;
+
+      if (addResult.ok) {
+        state.done.push(item);
+        state.index += 1;
+        state.phase = "idle";
+        state.pendingAction = null;
+        persistImportProgress(state);
+        log(`专辑添加成功：${item.id} ｜ ${item.name || item.album || "(无标题)"} ｜ ${addResult.mode}`);
+        return;
+      }
+
+      state.failed.push({ ...item, reason: addResult.reason || "album-add-failed" });
       state.phase = "need-manual-check";
       state.pendingAction = null;
       if (continuous) {
@@ -5564,11 +5589,15 @@ ${result.mediaType === "playlists" ? `播放列表名：${result.playlistName ||
       }
       saveState(state);
       render();
-      log(`已停下，等待你手动确认：${item.artist} - ${item.album}`);
+      log(`专辑添加失败，已停下：${item.id} ｜ ${item.name || item.album || "(无标题)"} ｜ ${addResult.reason}`);
       return;
     }
 
-    state.failed.push({ ...item, reason: result.reason || "unknown-error" });
+    if (pageState.status === "stopped") {
+      return;
+    }
+
+    state.failed.push({ ...item, reason: `album-page-${pageState.status || "unknown"}` });
     state.phase = "need-manual-check";
     state.pendingAction = null;
     if (continuous) {
@@ -5578,7 +5607,7 @@ ${result.mediaType === "playlists" ? `播放列表名：${result.playlistName ||
     }
     saveState(state);
     render();
-    log(`失败，已停下：${item.artist} - ${item.album} ｜ ${result.reason}`);
+    log(`专辑页状态无法识别，已停下：${item.id} ｜ ${item.name || item.album || "(无标题)"} ｜ ${pageState.status}`);
   }
 
   async function autoLoop(token) {
@@ -5594,7 +5623,12 @@ ${result.mediaType === "playlists" ? `播放列表名：${result.playlistName ||
       await sleep(1500);
       if (!isRunValid(token)) break;
 
-      location.href = getItemNavigationUrl(state, item);
+      const nextUrl = getItemNavigationUrl(state, item);
+      if (!nextUrl) {
+        continue;
+      }
+
+      location.href = nextUrl;
       return;
     }
   }
