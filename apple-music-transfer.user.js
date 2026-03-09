@@ -6,7 +6,7 @@
 // @license      MIT
 // @homepageURL  https://github.com/pinyht/apple-music-transfer
 // @supportURL   https://github.com/pinyht/apple-music-transfer
-// @version      1.0.3
+// @version      1.0.4
 // @match        https://music.apple.com/*
 // @grant        none
 // @run-at       document-start
@@ -36,8 +36,8 @@
   const EXPORT_RELOAD_MAX_ATTEMPTS = 2;
   const PLAYLIST_CREATION_SETTLE_MS = 5000;
   const PLAYLIST_ADD_SETTLE_MS = 2500;
-  const PLAYLIST_LOOKUP_RETRY_TIMEOUT_MS = 25000;
-  const PLAYLIST_LOOKUP_RETRY_INTERVAL_MS = 1500;
+  const PLAYLIST_SYNC_RELOAD_TIMEOUT_MS = 70000;
+  const PLAYLIST_SYNC_RELOAD_SETTLE_MS = 8000;
   const TOOL_PANEL_Z_INDEX = 2147483000;
   const TOOL_OVERLAY_Z_INDEX = 2147483500;
   const TOOL_RESULT_Z_INDEX = 2147483501;
@@ -3265,6 +3265,8 @@
     if (typeof state.playlistName !== "string") state.playlistName = "";
     if (typeof state.playlistDescription !== "string") state.playlistDescription = "";
     if (typeof state.playlistCreated !== "boolean") state.playlistCreated = false;
+    if (!Number.isFinite(state.playlistSyncDeadlineAt)) state.playlistSyncDeadlineAt = 0;
+    if (!Number.isFinite(state.playlistSyncWaitUntil)) state.playlistSyncWaitUntil = 0;
     return state;
   }
 
@@ -4682,23 +4684,6 @@ ${result.mediaType === "playlists" ? `播放列表名：${result.playlistName ||
     return nested;
   }
 
-  async function refreshAddToPlaylistSubmenu(token = null) {
-    const moreButton = findMoreButton(document);
-    if (moreButton && isVisibleNode(moreButton)) {
-      moreButton.click();
-      await sleep(350);
-    } else {
-      document.dispatchEvent(new KeyboardEvent("keydown", {
-        key: "Escape",
-        bubbles: true,
-        cancelable: true
-      }));
-      await sleep(350);
-    }
-
-    return ensureAddToPlaylistSubmenuOpen(token);
-  }
-
   function findPlaylistOptionButtonInSubmenu(submenu, playlistName) {
     const normalizedName = cleanText(playlistName);
     if (!submenu || !normalizedName) return null;
@@ -4719,27 +4704,21 @@ ${result.mediaType === "playlists" ? `播放列表名：${result.playlistName ||
       .find(button => nodeMatchesKeywords(button, NEW_PLAYLIST_KEYWORDS, "exact")) || null;
   }
 
-  async function waitForPlaylistOptionButton(playlistName, timeout = PLAYLIST_LOOKUP_RETRY_TIMEOUT_MS, token = null) {
-    const startedAt = Date.now();
-    let firstAttempt = true;
+  function clearPlaylistSyncState(state) {
+    if (!state || typeof state !== "object") return;
+    state.playlistSyncDeadlineAt = 0;
+    state.playlistSyncWaitUntil = 0;
+  }
 
-    while (Date.now() - startedAt < timeout) {
-      if (token && !isRunValid(token)) return null;
-
-      const submenu = firstAttempt
-        ? await ensureAddToPlaylistSubmenuOpen(token)
-        : await refreshAddToPlaylistSubmenu(token);
-      firstAttempt = false;
-
-      const button = findPlaylistOptionButtonInSubmenu(submenu, playlistName);
-      if (button) {
-        return button;
-      }
-
-      await sleep(PLAYLIST_LOOKUP_RETRY_INTERVAL_MS);
-    }
-
-    return null;
+  function schedulePlaylistSyncReload(state, playlistName) {
+    const now = Date.now();
+    state.playlistSyncDeadlineAt = Math.max(Number(state.playlistSyncDeadlineAt) || 0, now + PLAYLIST_SYNC_RELOAD_TIMEOUT_MS);
+    state.playlistSyncWaitUntil = now + PLAYLIST_SYNC_RELOAD_SETTLE_MS;
+    state.pendingAction = "process-current-item";
+    state.phase = "waiting-playlist-sync-reload";
+    saveState(state);
+    log(`新建播放列表尚未同步到菜单，准备刷新页面后继续等待：${playlistName} ｜ 最长等待 ${formatWholeNumber(Math.ceil((state.playlistSyncDeadlineAt - now) / 1000))} 秒`);
+    location.reload();
   }
 
   async function createPlaylistFromDialog(playlistName, playlistDescription, token = null) {
@@ -4798,20 +4777,20 @@ ${result.mediaType === "playlists" ? `播放列表名：${result.playlistName ||
     const existingPlaylistButton = findPlaylistOptionButtonInSubmenu(submenu, playlistName);
     if (existingPlaylistButton) {
       state.playlistCreated = true;
+      clearPlaylistSyncState(state);
       existingPlaylistButton.click();
       await sleep(PLAYLIST_ADD_SETTLE_MS);
       return { ok: true, mode: "added-to-existing-playlist" };
     }
 
     if (state?.playlistCreated) {
-      const delayedPlaylistButton = await waitForPlaylistOptionButton(playlistName, PLAYLIST_LOOKUP_RETRY_TIMEOUT_MS, token);
-      if (!delayedPlaylistButton) {
+      if (Number(state.playlistSyncDeadlineAt) && Date.now() >= Number(state.playlistSyncDeadlineAt)) {
+        clearPlaylistSyncState(state);
         return { ok: false, reason: "playlist-not-found-after-create" };
       }
 
-      delayedPlaylistButton.click();
-      await sleep(PLAYLIST_ADD_SETTLE_MS);
-      return { ok: true, mode: "added-to-existing-playlist-after-retry" };
+      schedulePlaylistSyncReload(state, playlistName);
+      return { ok: false, reason: "playlist-sync-reload" };
     }
 
     const newPlaylistButton = findNewPlaylistButtonInSubmenu(submenu);
@@ -4826,6 +4805,8 @@ ${result.mediaType === "playlists" ? `播放列表名：${result.playlistName ||
     }
 
     state.playlistCreated = true;
+    state.playlistSyncDeadlineAt = Date.now() + PLAYLIST_SYNC_RELOAD_TIMEOUT_MS;
+    state.playlistSyncWaitUntil = 0;
     await sleep(PLAYLIST_CREATION_SETTLE_MS);
     return createResult;
   }
@@ -5421,6 +5402,17 @@ ${result.mediaType === "playlists" ? `播放列表名：${result.playlistName ||
     }
 
     if (mediaType === "playlists") {
+      const syncWaitUntil = Number(state.playlistSyncWaitUntil) || 0;
+      if (syncWaitUntil > Date.now()) {
+        const waitMs = syncWaitUntil - Date.now();
+        state.phase = "waiting-playlist-sync-settle";
+        saveState(state);
+        render();
+        log(`等待新建播放列表同步到菜单：剩余 ${formatWholeNumber(Math.ceil(waitMs / 1000))} 秒`);
+        await sleep(waitMs);
+        if (token && !isRunValid(token)) return;
+      }
+
       render();
 
       if (!onSongPage() || !songPageMatchesItem(item)) {
@@ -5451,6 +5443,10 @@ ${result.mediaType === "playlists" ? `播放列表名：${result.playlistName ||
       if (pageState.status === "addable-to-playlist") {
         const addResult = await addCurrentSongToPlaylist(state, item, token);
         if (continuous && token && !isRunValid(token)) return;
+
+        if (addResult.reason === "playlist-sync-reload") {
+          return;
+        }
 
         if (addResult.ok) {
           state.done.push(item);
