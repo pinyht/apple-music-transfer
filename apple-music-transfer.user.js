@@ -6,7 +6,7 @@
 // @license      MIT
 // @homepageURL  https://github.com/pinyht/apple-music-transfer
 // @supportURL   https://github.com/pinyht/apple-music-transfer
-// @version      1.0
+// @version      1.0.1
 // @match        https://music.apple.com/*
 // @grant        none
 // @run-at       document-start
@@ -315,7 +315,7 @@
   }
 
   function getStorefront() {
-    return getSavedStorefront() || getStorefrontFromUrl() || "us";
+    return getStorefrontFromUrl() || getSavedStorefront() || "cn";
   }
 
   function getLanguage() {
@@ -445,13 +445,17 @@
   }
 
   function getStorefrontSummary() {
+    const active = getStorefront();
     const detected = getStorefrontFromUrl();
     const language = getCurrentLanguage();
     const languageLabel = language ? `${getLanguageLabel(language)} (${language})` : "未识别";
-    const storefrontText = detected
-      ? `当前区服：${getStorefrontLabel(detected)} (${detected})`
+    const storefrontText = active
+      ? `当前区服：${getStorefrontLabel(active)} (${active})`
       : "当前区服：未识别";
-    return `${storefrontText} | 当前语言：${languageLabel}`;
+    const detectedText = detected && detected !== active
+      ? ` | 页面区服：${getStorefrontLabel(detected)} (${detected})`
+      : "";
+    return `${storefrontText}${detectedText} | 当前语言：${languageLabel}`;
   }
 
   function getCurrentLanguage() {
@@ -3879,8 +3883,8 @@ ${result.mediaType === "playlists" ? `播放列表名：${result.playlistName ||
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
           <div id="amr_storefront_status" style="color:#d2d2d7;font-size:11px;line-height:1.4;"></div>
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-            <button id="amr_switch_chinese" style="padding:5px 8px;border:none;border-radius:999px;background:#3a3a3c;color:#fff;font-size:11px;cursor:pointer;">切换语言</button>
             <button id="amr_toggle_storefront_picker" style="padding:5px 8px;border:none;border-radius:999px;background:#3a3a3c;color:#fff;font-size:11px;cursor:pointer;">切换区服</button>
+            <button id="amr_switch_chinese" style="padding:5px 8px;border:none;border-radius:999px;background:#3a3a3c;color:#fff;font-size:11px;cursor:pointer;">切换语言</button>
           </div>
         </div>
         <div id="amr_storefront_picker_menu" style="display:none;width:100%;margin-top:6px;"></div>
@@ -5619,7 +5623,7 @@ ${result.mediaType === "playlists" ? `播放列表名：${result.playlistName ||
     }
 
     const sf = getStorefrontFromUrl();
-    if (sf && !getSavedStorefront()) setSavedStorefront(sf);
+    if (sf) setSavedStorefront(sf);
     const currentLanguage = getCurrentLanguage();
     if (currentLanguage) setSavedLanguage(currentLanguage);
 
