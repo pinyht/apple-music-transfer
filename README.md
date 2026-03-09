@@ -5,6 +5,7 @@ Apple Music Transfer 是一个用于 Apple Music 数据备份与迁移的 Tamper
 项目地址：
 
 - GitHub: https://github.com/pinyht/apple-music-transfer
+- Greasy Fork: https://greasyfork.org/zh-CN/scripts/568952-apple-music-transfer
 
 它主要用于：
 
@@ -62,6 +63,10 @@ Apple Music 的资料库和播放列表并不适合被当作永久存档。
 
 建议通过脚本库搜索 `Apple Music Transfer` 后直接安装。
 
+也可以直接通过下方地址安装：
+
+- Greasy Fork 安装页： https://greasyfork.org/zh-CN/scripts/568952-apple-music-transfer
+
 补充说明：
 
 - 在直连网络环境下，Apple Music 网页版通常会被强制落到中国大陆区
@@ -111,6 +116,8 @@ Apple Music 的资料库和播放列表并不适合被当作永久存档。
 - 导入专辑、歌曲时，脚本会根据 ID 打开详情页并自动判断是否可加入资料库
 - 导入播放列表时，脚本会根据歌曲 ID 逐条加入目标播放列表
 - 如果目标播放列表不存在，脚本会自动新建
+- 专辑迁移是按“整张专辑”恢复的。也就是说，如果你原来只收藏了某张专辑中的部分歌曲，使用专辑导入后，Apple Music 会把该专辑的全部歌曲加入资料库
+- 如果你希望更精确地迁移到歌曲粒度，例如只恢复专辑中的部分歌曲，请使用“导出歌曲”和“导入歌曲”功能
 
 ## 支持的显示语言
 
@@ -193,6 +200,7 @@ Apple Music 的资料库和播放列表并不适合被当作永久存档。
 - 建议先导出 `json` 做备份，再执行导入
 - 即使是同一个账号、同一个区服，重新订阅后也可能出现资料库或播放列表丢失，因此建议定期备份
 - 如果没有代理网络环境，跨区服切换可能失败，Apple Music 也可能自动回到中国大陆区
+- 专辑导入恢复的是整张专辑，不会保留“只收藏专辑内其中几首歌”的粒度；如果需要按歌曲精确恢复，请使用歌曲导出与歌曲导入
 
 ## 更新日志
 
